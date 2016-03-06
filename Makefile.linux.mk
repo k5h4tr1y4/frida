@@ -28,7 +28,7 @@ HELP_FUN = \
 	print "  $${variable_color}NODE$${reset_color}                    Absolute path of Node.js binary\n"; \
 	print "\n"; \
 	print "For example:\n"; \
-	print "  \$$ make $${target_color}python-64 $${variable_color}PYTHON$${reset_color}=/opt/python34-64/bin/python3.4\n"; \
+	print "  \$$ make $${target_color}python-64 $${variable_color}PYTHON$${reset_color}=/opt/python35-64/bin/python3.5\n"; \
 	print "  \$$ make $${target_color}node-32 $${variable_color}NODE$${reset_color}=/opt/node-32/bin/node\n"; \
 	print "\n";
 
@@ -52,6 +52,7 @@ clean: clean-submodules
 	rm -rf build/frida-android-arm64
 	rm -rf build/frida-qnx-i386
 	rm -rf build/frida-qnx-arm
+	rm -rf build/frida-qnx-armeabi
 	rm -rf build/frida_stripped-linux-i386
 	rm -rf build/frida_stripped-linux-x86_64
 	rm -rf build/frida_stripped-android-i386
@@ -59,6 +60,7 @@ clean: clean-submodules
 	rm -rf build/frida_stripped-android-arm64
 	rm -rf build/frida_stripped-qnx-i386
 	rm -rf build/frida_stripped-qnx-arm
+	rm -rf build/frida_stripped-qnx-armeabi
 	rm -rf build/tmp-linux-i386
 	rm -rf build/tmp-linux-x86_64
 	rm -rf build/tmp-android-i386
@@ -66,6 +68,7 @@ clean: clean-submodules
 	rm -rf build/tmp-android-arm64
 	rm -rf build/tmp-qnx-i386
 	rm -rf build/tmp-qnx-arm
+	rm -rf build/tmp-qnx-armeabi
 	rm -rf build/tmp_stripped-linux-i386
 	rm -rf build/tmp_stripped-linux-x86_64
 	rm -rf build/tmp_stripped-android-i386
@@ -73,6 +76,7 @@ clean: clean-submodules
 	rm -rf build/tmp_stripped-android-arm64
 	rm -rf build/tmp_stripped-qnx-i386
 	rm -rf build/tmp_stripped-qnx-arm
+	rm -rf build/tmp_stripped-qnx-armeabi
 	rm -rf $(BINDIST)
 
 clean-submodules:
@@ -91,6 +95,8 @@ build/frida-%/lib/pkgconfig/capstone.pc: build/frida-env-%.rc build/capstone-sub
 			*-i386)   capstone_archs="x86"     ;; \
 			*-x86_64) capstone_archs="x86"     ;; \
 			*-arm)    capstone_archs="arm"     ;; \
+			*-armhf)  capstone_archs="arm"     ;; \
+			*-armeabi)capstone_archs="arm"     ;; \
 			*-arm64)  capstone_archs="aarch64" ;; \
 		esac \
 		&& make -C capstone \
@@ -99,7 +105,6 @@ build/frida-%/lib/pkgconfig/capstone.pc: build/frida-env-%.rc build/capstone-sub
 			CAPSTONE_ARCHS="$$capstone_archs" \
 			CAPSTONE_SHARED=$$enable_shared \
 			CAPSTONE_STATIC=$$enable_static \
-			CAPSTONE_DIET=yes \
 			install
 
 
@@ -107,10 +112,12 @@ gum-32: build/frida-linux-i386/lib/pkgconfig/frida-gum-1.0.pc ##@gum Build for i
 gum-64: build/frida-linux-x86_64/lib/pkgconfig/frida-gum-1.0.pc ##@gum Build for x86-64
 gum-android: build/frida-android-arm/lib/pkgconfig/frida-gum-1.0.pc build/frida-android-arm64/lib/pkgconfig/frida-gum-1.0.pc ##@gum Build for Android
 
-frida-gum/configure: build/frida-env-linux-$(build_arch).rc frida-gum/configure.ac
+build/frida-gum-autogen-stamp: build/frida-env-linux-$(build_arch).rc frida-gum/configure.ac
+	@$(NPM) --version &>/dev/null || (echo -e "\033[31mOops. It appears Node.js is not installed.\nWe need it for processing JavaScript code at build-time.\nCheck PATH or set NODE to the absolute path of your Node.js binary.\033[0m"; exit 1;)
 	. build/frida-env-linux-$(build_arch).rc && cd frida-gum && ./autogen.sh
+	@touch -c $@
 
-build/tmp-%/frida-gum/Makefile: build/frida-env-%.rc frida-gum/configure build/frida-%/lib/pkgconfig/capstone.pc
+build/tmp-%/frida-gum/Makefile: build/frida-env-%.rc build/frida-gum-autogen-stamp build/frida-%/lib/pkgconfig/capstone.pc
 	mkdir -p $(@D)
 	. build/frida-env-$*.rc && cd $(@D) && ../../../frida-gum/configure
 
@@ -129,6 +136,7 @@ core-32: build/frida-linux-i386/lib/pkgconfig/frida-core-1.0.pc ##@core Build fo
 core-64: build/frida-linux-x86_64/lib/pkgconfig/frida-core-1.0.pc ##@core Build for x86-64
 core-android: build/frida-android-arm/lib/pkgconfig/frida-core-1.0.pc build/frida-android-arm64/lib/pkgconfig/frida-core-1.0.pc ##@core Build for Android
 core-qnx-arm: build/frida-qnx-arm/lib/pkgconfig/frida-core-1.0.pc ##@core Build for QNX-arm
+core-qnx-armeabi: build/frida-qnx-armeabi/lib/pkgconfig/frida-core-1.0.pc ##@core Build for QNX-armeabi
 
 frida-core/configure: build/frida-env-linux-$(build_arch).rc frida-core/configure.ac
 	. build/frida-env-linux-$(build_arch).rc && cd frida-core && ./autogen.sh
@@ -137,16 +145,50 @@ build/tmp-%/frida-core/Makefile: build/frida-env-%.rc frida-core/configure build
 	mkdir -p $(@D)
 	. build/frida-env-$*.rc && cd $(@D) && ../../../frida-core/configure
 
-build/frida-linux-%/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-linux-i386/frida-core/src/frida-helper build/tmp_stripped-linux-x86_64/frida-core/src/frida-helper build/tmp_stripped-linux-i386/frida-core/lib/agent/.libs/libfrida-agent.so build/tmp_stripped-linux-x86_64/frida-core/lib/agent/.libs/libfrida-agent.so
+build/frida-linux-i386/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-linux-i386/frida-core/src/frida-helper build/tmp_stripped-linux-x86_64/frida-core/src/frida-helper build/tmp_stripped-linux-i386/frida-core/lib/agent/.libs/libfrida-agent.so build/tmp_stripped-linux-x86_64/frida-core/lib/agent/.libs/libfrida-agent.so
 	@$(call ensure_relink,frida-core/src/frida.c,build/tmp-linux-$*/frida-core/src/libfrida_core_la-frida.lo)
-	. build/frida-env-linux-$*.rc \
-		&& cd build/tmp-linux-$*/frida-core \
+	. build/frida-env-linux-i386.rc \
+		&& cd build/tmp-linux-i386/frida-core \
 		&& make -C src install \
 			RESOURCE_COMPILER="\"$(FRIDA)/releng/resource-compiler-linux-$(build_arch)\" --toolchain=gnu" \
 			HELPER32=../../../../build/tmp_stripped-linux-i386/frida-core/src/frida-helper!frida-helper-32 \
 			HELPER64=../../../../build/tmp_stripped-linux-x86_64/frida-core/src/frida-helper!frida-helper-64 \
 			AGENT32=../../../../build/tmp_stripped-linux-i386/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-32.so \
 			AGENT64=../../../../build/tmp_stripped-linux-x86_64/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-64.so \
+		&& make install-data-am
+	@touch -c $@
+build/frida-linux-x86_64/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-linux-i386/frida-core/src/frida-helper build/tmp_stripped-linux-x86_64/frida-core/src/frida-helper build/tmp_stripped-linux-i386/frida-core/lib/agent/.libs/libfrida-agent.so build/tmp_stripped-linux-x86_64/frida-core/lib/agent/.libs/libfrida-agent.so
+	@$(call ensure_relink,frida-core/src/frida.c,build/tmp-linux-$*/frida-core/src/libfrida_core_la-frida.lo)
+	. build/frida-env-linux-x86_64.rc \
+		&& cd build/tmp-linux-x86_64/frida-core \
+		&& make -C src install \
+			RESOURCE_COMPILER="\"$(FRIDA)/releng/resource-compiler-linux-$(build_arch)\" --toolchain=gnu" \
+			HELPER32=../../../../build/tmp_stripped-linux-i386/frida-core/src/frida-helper!frida-helper-32 \
+			HELPER64=../../../../build/tmp_stripped-linux-x86_64/frida-core/src/frida-helper!frida-helper-64 \
+			AGENT32=../../../../build/tmp_stripped-linux-i386/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-32.so \
+			AGENT64=../../../../build/tmp_stripped-linux-x86_64/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-64.so \
+		&& make install-data-am
+	@touch -c $@
+build/frida-linux-arm/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-linux-arm/frida-core/src/frida-helper build/tmp_stripped-linux-arm/frida-core/lib/loader/.libs/libfrida-loader.so build/tmp_stripped-linux-arm/frida-core/lib/agent/.libs/libfrida-agent.so
+	@$(call ensure_relink,frida-core/src/frida.c,build/tmp-android-arm/frida-core/src/libfrida_core_la-frida.lo)
+	. build/frida-env-linux-arm.rc \
+		&& cd build/tmp-linux-arm/frida-core \
+		&& make -C src install \
+			RESOURCE_COMPILER="\"$(FRIDA)/releng/resource-compiler-linux-$(build_arch)\" --toolchain=gnu" \
+			HELPER32=../../../../build/tmp_stripped-linux-arm/frida-core/src/frida-helper!frida-helper-32 \
+			LOADER32=../../../../build/tmp_stripped-linux-arm/frida-core/lib/loader/.libs/libfrida-loader.so!frida-loader-32.so \
+			AGENT32=../../../../build/tmp_stripped-linux-arm/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-32.so \
+		&& make install-data-am
+	@touch -c $@
+build/frida-linux-armhf/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-linux-armhf/frida-core/src/frida-helper build/tmp_stripped-linux-armhf/frida-core/lib/loader/.libs/libfrida-loader.so build/tmp_stripped-linux-armhf/frida-core/lib/agent/.libs/libfrida-agent.so
+	@$(call ensure_relink,frida-core/src/frida.c,build/tmp-android-armhf/frida-core/src/libfrida_core_la-frida.lo)
+	. build/frida-env-linux-armhf.rc \
+		&& cd build/tmp-linux-armhf/frida-core \
+		&& make -C src install \
+			RESOURCE_COMPILER="\"$(FRIDA)/releng/resource-compiler-linux-$(build_arch)\" --toolchain=gnu" \
+			HELPER32=../../../../build/tmp_stripped-linux-armhf/frida-core/src/frida-helper!frida-helper-32 \
+			LOADER32=../../../../build/tmp_stripped-linux-armhf/frida-core/lib/loader/.libs/libfrida-loader.so!frida-loader-32.so \
+			AGENT32=../../../../build/tmp_stripped-linux-armhf/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-32.so \
 		&& make install-data-am
 	@touch -c $@
 build/frida-android-i386/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-android-i386/frida-core/src/frida-helper build/tmp_stripped-android-i386/frida-core/lib/loader/.libs/libfrida-loader.so build/tmp_stripped-android-i386/frida-core/lib/agent/.libs/libfrida-agent.so
@@ -158,6 +200,20 @@ build/frida-android-i386/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-and
 			HELPER32=../../../../build/tmp_stripped-android-i386/frida-core/src/frida-helper!frida-helper-32 \
 			LOADER32=../../../../build/tmp_stripped-android-i386/frida-core/lib/loader/.libs/libfrida-loader.so!frida-loader-32.so \
 			AGENT32=../../../../build/tmp_stripped-android-i386/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-32.so \
+		&& make install-data-am
+	@touch -c $@
+build/frida-android-x86_64/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-android-i386/frida-core/src/frida-helper build/tmp_stripped-android-x86_64/frida-core/src/frida-helper build/tmp_stripped-android-i386/frida-core/lib/loader/.libs/libfrida-loader.so build/tmp_stripped-android-x86_64/frida-core/lib/loader/.libs/libfrida-loader.so build/tmp_stripped-android-i386/frida-core/lib/agent/.libs/libfrida-agent.so build/tmp_stripped-android-x86_64/frida-core/lib/agent/.libs/libfrida-agent.so
+	@$(call ensure_relink,frida-core/src/frida.c,build/tmp-android-i386/frida-core/src/libfrida_core_la-frida.lo)
+	. build/frida-env-android-x86_64.rc \
+		&& cd build/tmp-android-x86_64/frida-core \
+		&& make -C src install \
+			RESOURCE_COMPILER="\"$(FRIDA)/releng/resource-compiler-linux-$(build_arch)\" --toolchain=gnu" \
+			HELPER32=../../../../build/tmp_stripped-android-i386/frida-core/src/frida-helper!frida-helper-32 \
+			HELPER64=../../../../build/tmp_stripped-android-x86_64/frida-core/src/frida-helper!frida-helper-64 \
+			LOADER32=../../../../build/tmp_stripped-android-i386/frida-core/lib/loader/.libs/libfrida-loader.so!frida-loader-32.so \
+			LOADER64=../../../../build/tmp_stripped-android-x86_64/frida-core/lib/loader/.libs/libfrida-loader.so!frida-loader-64.so \
+			AGENT32=../../../../build/tmp_stripped-android-i386/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-32.so \
+			AGENT64=../../../../build/tmp_stripped-android-x86_64/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent-64.so \
 		&& make install-data-am
 	@touch -c $@
 build/frida-android-arm/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-android-arm/frida-core/src/frida-helper build/tmp_stripped-android-arm/frida-core/lib/loader/.libs/libfrida-loader.so build/tmp_stripped-android-arm/frida-core/lib/agent/.libs/libfrida-agent.so
@@ -192,6 +248,15 @@ build/frida-qnx-arm/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-qnx-arm/
 		&& make -C src install \
 			RESOURCE_COMPILER="\"$(FRIDA)/releng/resource-compiler-linux-$(build_arch)\" --toolchain=gnu" \
 			AGENT=../../../../build/tmp_stripped-qnx-arm/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent.so \
+		&& make install-data-am
+	@touch -c $@
+build/frida-qnx-armeabi/lib/pkgconfig/frida-core-1.0.pc: build/tmp_stripped-qnx-armeabi/frida-core/lib/agent/.libs/libfrida-agent.so
+	@$(call ensure_relink,frida-core/src/frida.c,build/tmp-qnx-armeabi/frida-core/src/libfrida_core_la-frida.lo)
+	. build/frida-env-qnx-armeabi.rc \
+		&& cd build/tmp-qnx-armeabi/frida-core \
+		&& make -C src install \
+			RESOURCE_COMPILER="\"$(FRIDA)/releng/resource-compiler-linux-$(build_arch)\" --toolchain=gnu" \
+			AGENT=../../../../build/tmp_stripped-qnx-armeabi/frida-core/lib/agent/.libs/libfrida-agent.so!frida-agent.so \
 		&& make install-data-am
 	@touch -c $@
 
@@ -241,6 +306,17 @@ build/tmp_stripped-%/frida-core/lib/agent/.libs/libfrida-agent.so: build/tmp-%/f
 	cp build/tmp-$*/frida-core/lib/agent/.libs/libfrida-agent.so $@
 	. build/frida-env-$*.rc && $$STRIP --strip-all $@
 
+build/tmp-%/frida-core/lib/gadget/libfrida-gadget.la: build/tmp-%/frida-core/lib/interfaces/libfrida-interfaces.la
+	@$(call ensure_relink,frida-core/lib/gadget/gadget.c,build/tmp-$*/frida-core/lib/gadget/libfrida_gadget_la-gadget.lo)
+	. build/frida-env-$*.rc && make -C build/tmp-$*/frida-core/lib/gadget
+	@touch -c $@
+
+build/frida_stripped-%/lib/frida-gadget.so: build/tmp-%/frida-core/lib/gadget/libfrida-gadget.la
+	mkdir -p $(@D)
+	cp build/tmp-$*/frida-core/lib/gadget/.libs/libfrida-gadget.so $@.tmp
+	. build/frida-env-$*.rc && $$STRIP --strip-all $@.tmp
+	mv $@.tmp $@
+
 build/tmp-%/frida-core/tests/frida-tests: build/frida-%/lib/pkgconfig/frida-core-1.0.pc
 	@$(call ensure_relink,frida-core/tests/main.c,build/tmp-$*/frida-core/tests/main.o)
 	@$(call ensure_relink,frida-core/tests/inject-victim.c,build/tmp-$*/frida-core/tests/inject-victim.o)
@@ -270,13 +346,42 @@ server-32: build/frida_stripped-linux-i386/bin/frida-server ##@server Build for 
 server-64: build/frida_stripped-linux-x86_64/bin/frida-server ##@server Build for x86-64
 	mkdir -p $(BINDIST)/bin
 	cp -f build/frida_stripped-linux-x86_64/bin/frida-server $(BINDIST)/bin/frida-server-linux-64
+server-arm: build/frida_stripped-linux-arm/bin/frida-server ##@server Build for arm
+	mkdir -p $(BINDIST)/bin
+	cp -f build/frida_stripped-linux-arm/bin/frida-server $(BINDIST)/bin/frida-server-linux-arm
+server-armhf: build/frida_stripped-linux-armhf/bin/frida-server ##@server Build for arm
+	mkdir -p $(BINDIST)/bin
+	cp -f build/frida_stripped-linux-armhf/bin/frida-server $(BINDIST)/bin/frida-server-linux-armhf
 server-android: build/frida_stripped-android-arm/bin/frida-server build/frida_stripped-android-arm64/bin/frida-server ##@server Build for Android
 	mkdir -p $(BINDIST)/bin
 	cp -f build/frida_stripped-android-arm/bin/frida-server $(BINDIST)/bin/frida-server-android
 	cp -f build/frida_stripped-android-arm64/bin/frida-server $(BINDIST)/bin/frida-server-android64
 server-qnx-arm: build/frida_stripped-qnx-arm/bin/frida-server ##@server Build for QNX-arm
 	mkdir -p $(BINDIST)/bin
-	cp -f build/frida_stripped-qnx-arm/bin/frida-server $(BINDIST)/bin/frida-server-qnx
+	cp -f build/frida_stripped-qnx-arm/bin/frida-server $(BINDIST)/bin/frida-server-qnx-arm
+server-qnx-armeabi: build/frida_stripped-qnx-armeabi/bin/frida-server ##@server Build for QNX-armeabi
+	mkdir -p $(BINDIST)/bin
+	cp -f build/frida_stripped-qnx-armeabi/bin/frida-server $(BINDIST)/bin/frida-server-qnx-armeabi
+
+inject-32: build/frida_stripped-linux-i386/bin/frida-inject ##@inject Build for i386
+	mkdir -p $(BINDIST)/bin
+	cp -f build/frida_stripped-linux-i386/bin/frida-inject $(BINDIST)/bin/frida-inject-linux-32
+inject-64: build/frida_stripped-linux-x86_64/bin/frida-inject ##@inject Build for x86-64
+	mkdir -p $(BINDIST)/bin
+	cp -f build/frida_stripped-linux-x86_64/bin/frida-inject $(BINDIST)/bin/frida-inject-linux-64
+inject-arm: build/frida_stripped-linux-arm/bin/frida-inject ##@inject Build for arm
+	mkdir -p $(BINDIST)/bin
+	cp -f build/frida_stripped-linux-arm/bin/frida-inject $(BINDIST)/bin/frida-inject-linux-arm
+inject-armhf: build/frida_stripped-linux-armhf/bin/frida-inject ##@inject Build for armhf
+	mkdir -p $(BINDIST)/bin
+	cp -f build/frida_stripped-linux-armhf/bin/frida-inject $(BINDIST)/bin/frida-inject-linux-armhf
+
+gadget-32: build/frida_stripped-linux-i386/lib/frida-gadget.so ##@gadget Build for i386
+	mkdir -p $(BINDIST)/lib
+	cp -f $< $(BINDIST)/lib/frida-gadget-32.so
+gadget-64: build/frida_stripped-linux-x86_64/lib/frida-gadget.so ##@gadget Build for x86-64
+	mkdir -p $(BINDIST)/lib
+	cp -f $< $(BINDIST)/lib/frida-gadget-64.so
 
 build/frida_stripped-%/bin/frida-server: build/frida-%/bin/frida-server
 	mkdir -p $(@D)
@@ -286,6 +391,16 @@ build/frida_stripped-%/bin/frida-server: build/frida-%/bin/frida-server
 build/frida-%/bin/frida-server: build/frida-%/lib/pkgconfig/frida-core-1.0.pc
 	@$(call ensure_relink,frida-core/server/server.c,build/tmp-$*/frida-core/server/frida_server-server.o)
 	. build/frida-env-$*.rc && make -C build/tmp-$*/frida-core/server install
+	@touch -c $@
+
+build/frida_stripped-%/bin/frida-inject: build/frida-%/bin/frida-inject
+	mkdir -p $(@D)
+	cp $< $@.tmp
+	. build/frida-env-$*.rc && $$STRIP --strip-all $@.tmp
+	mv $@.tmp $@
+build/frida-%/bin/frida-inject: build/frida-%/lib/pkgconfig/frida-core-1.0.pc
+	@$(call ensure_relink,frida-core/inject/inject.c,build/tmp-$*/frida-core/inject/frida_inject-inject.o)
+	. build/frida-env-$*.rc && make -C build/tmp-$*/frida-core/inject install
 	@touch -c $@
 
 
@@ -339,18 +454,20 @@ node-64: build/frida_stripped-linux-x86_64/lib/node_modules/frida build/frida-no
 	cp -rf build/frida_stripped-linux-x86_64/lib/node_modules/frida $(BINDIST)/lib64/node_modules
 
 build/frida_stripped-%/lib/node_modules/frida: build/frida-%/lib/pkgconfig/frida-core-1.0.pc build/frida-node-submodule-stamp
+	@$(NPM) --version &>/dev/null || (echo -e "\033[31mOops. It appears Node.js is not installed.\nCheck PATH or set NODE to the absolute path of your Node.js binary.\033[0m"; exit 1;)
 	export PATH=$(NODE_BIN_DIR):$$PATH FRIDA=$(FRIDA) \
 		&& cd frida-node \
-		&& rm -rf frida-0.0.0.tgz build lib/binding node_modules \
-		&& $(NPM) install --build-from-source \
+		&& rm -rf frida-0.0.0.tgz build node_modules \
+		&& $(NPM) install \
 		&& $(NPM) pack \
 		&& rm -rf ../$@/ ../$@.tmp/ \
-		&& mkdir -p ../$@.tmp/ \
+		&& mkdir -p ../$@.tmp/build/ \
 		&& tar -C ../$@.tmp/ --strip-components 1 -x -f frida-0.0.0.tgz \
 		&& rm frida-0.0.0.tgz \
-		&& mv lib/binding ../$@.tmp/lib/ \
+		&& mv build/Release/frida_binding.node ../$@.tmp/build/ \
+		&& rm -rf build \
 		&& mv node_modules ../$@.tmp/ \
-		&& strip --strip-all ../$@.tmp/lib/binding/Release/node-*/frida_binding.node \
+		&& strip --strip-all ../$@.tmp/build/frida_binding.node \
 		&& mv ../$@.tmp ../$@
 
 check-node-32: build/frida_stripped-linux-i386/lib/node_modules/frida ##@node Test Node.js bindings for i386
@@ -365,7 +482,7 @@ check-node-64: build/frida_stripped-linux-x86_64/lib/node_modules/frida ##@node 
 	capstone-update-submodule-stamp \
 	gum-32 gum-64 gum-android check-gum-32 check-gum-64 frida-gum-update-submodule-stamp \
 	core-32 core-64 core-android check-core-32 check-core-64 frida-core-update-submodule-stamp \
-	server-32 server-64 server-android server-qnx-arm \
+	server-32 server-64 server-android server-qnx-arm server-qnx-armeabi \
 	python-32 python-64 check-python-32 check-python-64 frida-python-update-submodule-stamp \
 	node-32 node-64 check-node-32 check-node-64 frida-node-update-submodule-stamp
 .SECONDARY:

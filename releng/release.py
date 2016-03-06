@@ -47,16 +47,12 @@ if __name__ == '__main__':
 
     def upload_to_npm(node, publish):
         node_bin_dir = os.path.dirname(node)
-        node_pre_gyp_bin_dir = os.path.join(frida_node_dir, "node_modules", "node-pre-gyp", "bin")
         npm = os.path.join(node_bin_dir, "npm")
         if system == 'Windows':
             npm += '.cmd'
-        node_pre_gyp = os.path.join(node_pre_gyp_bin_dir, "node-pre-gyp")
-        if system == 'Windows':
-            node_pre_gyp += '.cmd'
         env = dict(os.environ)
         env.update({
-            'PATH': os.pathsep.join([node_pre_gyp_bin_dir, node_bin_dir]) + os.pathsep + os.getenv('PATH'),
+            'PATH': node_bin_dir + os.pathsep + os.getenv('PATH'),
             'FRIDA': build_dir
         })
         def do(args):
@@ -73,18 +69,13 @@ if __name__ == '__main__':
         do([npm, "version", version])
         if publish:
             do([npm, "publish"])
-        do([npm, "install", "--build-from-source"])
-        if system == 'Darwin':
-            do(["strip", "-Sx", "build/Release/frida_binding.node"])
-            do(["strip", "-Sx", glob.glob(frida_node_dir + "/lib/binding/Release/node-*/frida_binding.node")[0]])
-        elif system == 'Linux':
-            do(["strip", "--strip-all", "build/Release/frida_binding.node"])
-            do(["strip", "--strip-all", glob.glob(frida_node_dir + "/lib/binding/Release/node-*/frida_binding.node")[0]])
-        do([node_pre_gyp, "package"])
-        package = glob.glob(os.path.join(frida_node_dir, "build", "stage", "node", "v*", "Release", "*.tar.gz"))[0]
-        remote_path = os.path.dirname(package[len(frida_node_dir) + 13:]).replace("\\", "/") + "/"
-        do([ssh, "buildmaster@build.frida.re", "mkdir -p /home/buildmaster/public_html/" + remote_path])
-        do([scp, package, "buildmaster@build.frida.re:/home/buildmaster/public_html/" + remote_path])
+        do([npm, "install"])
+        do([npm, "run", "prebuild", "--", "-t", "4.0.0", "-t", "5.0.0"])
+        packages = glob.glob(os.path.join(frida_node_dir, "prebuilds", "*.tar.gz"))
+        for package in packages:
+            remote_path = "node/v" + version
+            do([ssh, "buildmaster@build.frida.re", "mkdir -p /home/buildmaster/public_html/" + remote_path])
+            do([scp, package, "buildmaster@build.frida.re:/home/buildmaster/public_html/" + remote_path])
         reset()
 
     def upload_ios_deb(server):
@@ -105,26 +96,22 @@ if __name__ == '__main__':
                 os.path.join(build_dir, "build", "frida-windows", "Win32-Release", "lib", "python2.7", "site-packages", "_frida.pyd"))
             upload_to_pypi(r"C:\Program Files\Python27\python.exe",
                 os.path.join(build_dir, "build", "frida-windows", "x64-Release", "lib", "python2.7", "site-packages", "_frida.pyd"))
-            upload_to_pypi(r"C:\Program Files (x86)\Python34\python.exe",
-                os.path.join(build_dir, "build", "frida-windows", "Win32-Release", "lib", "python3.4", "site-packages", "_frida.pyd"))
-            upload_to_pypi(r"C:\Program Files\Python34\python.exe",
-                os.path.join(build_dir, "build", "frida-windows", "x64-Release", "lib", "python3.4", "site-packages", "_frida.pyd"), sdist=True)
+            upload_to_pypi(r"C:\Program Files (x86)\Python 3.5\python.exe",
+                os.path.join(build_dir, "build", "frida-windows", "Win32-Release", "lib", "python3.5", "site-packages", "_frida.pyd"))
+            upload_to_pypi(r"C:\Program Files\Python 3.5\python.exe",
+                os.path.join(build_dir, "build", "frida-windows", "x64-Release", "lib", "python3.5", "site-packages", "_frida.pyd"), sdist=True)
             upload_to_npm(r"C:\Program Files (x86)\nodejs\node.exe", publish=False)
-            upload_to_npm(r"C:\Program Files\nodejs\node.exe", publish=False)
-            upload_to_npm(r"C:\Program Files (x86)\iojs-v45\iojs.exe", publish=False)
-            upload_to_npm(r"C:\Program Files\iojs-v45\iojs.exe", publish=True)
+            upload_to_npm(r"C:\Program Files\nodejs\node.exe", publish=True)
         elif system == 'Darwin':
             upload_to_pypi("/usr/bin/python2.6",
                 os.path.join(build_dir, "build", "frida-mac-universal", "lib", "python2.6", "site-packages", "_frida.so"))
-            for osx_minor in xrange(7, 11):
+            for osx_minor in xrange(7, 12):
                 upload_to_pypi("/usr/bin/python2.7",
                     os.path.join(build_dir, "build", "frida-mac-universal", "lib", "python2.7", "site-packages", "_frida.so"),
                     { '_PYTHON_HOST_PLATFORM': "macosx-10.%d-intel" % osx_minor })
-            upload_to_pypi("/usr/local/bin/python3.4",
-                os.path.join(build_dir, "build", "frida-mac-universal", "lib", "python3.4", "site-packages", "_frida.so"))
-            upload_to_npm("/opt/node-32/bin/node", publish=False)
+            upload_to_pypi("/usr/local/bin/python3.5",
+                os.path.join(build_dir, "build", "frida-mac-universal", "lib", "python3.5", "site-packages", "_frida.so"))
             upload_to_npm("/opt/node-64/bin/node", publish=False)
-            upload_to_npm("/opt/iojs-v45-64/bin/iojs", publish=False)
             upload_ios_deb(os.path.join(build_dir, "build", "frida-ios-universal", "bin", "frida-server"))
         elif system == 'Linux':
             upload_to_pypi("/opt/python27-32/bin/python2.7",
@@ -133,13 +120,11 @@ if __name__ == '__main__':
             upload_to_pypi("/opt/python27-64/bin/python2.7",
                 os.path.join(build_dir, "build", "frida_stripped-linux-x86_64", "lib", "python2.7", "site-packages", "_frida.so"),
                 { 'LD_LIBRARY_PATH': "/opt/python27-64/lib", '_PYTHON_HOST_PLATFORM': "linux-x86_64" })
-            upload_to_pypi("/opt/python34-32/bin/python3.4",
-                os.path.join(build_dir, "build", "frida_stripped-linux-i386", "lib", "python3.4", "site-packages", "_frida.so"),
-                { 'LD_LIBRARY_PATH': "/opt/python34-32/lib", '_PYTHON_HOST_PLATFORM': "linux-i686" })
-            upload_to_pypi("/opt/python34-64/bin/python3.4",
-                os.path.join(build_dir, "build", "frida_stripped-linux-x86_64", "lib", "python3.4", "site-packages", "_frida.so"),
-                { 'LD_LIBRARY_PATH': "/opt/python34-64/lib", '_PYTHON_HOST_PLATFORM': "linux-x86_64" })
+            upload_to_pypi("/opt/python35-32/bin/python3.5",
+                os.path.join(build_dir, "build", "frida_stripped-linux-i386", "lib", "python3.5", "site-packages", "_frida.so"),
+                { 'LD_LIBRARY_PATH': "/opt/python35-32/lib", '_PYTHON_HOST_PLATFORM': "linux-i686" })
+            upload_to_pypi("/opt/python35-64/bin/python3.5",
+                os.path.join(build_dir, "build", "frida_stripped-linux-x86_64", "lib", "python3.5", "site-packages", "_frida.so"),
+                { 'LD_LIBRARY_PATH': "/opt/python35-64/lib", '_PYTHON_HOST_PLATFORM': "linux-x86_64" })
             upload_to_npm("/opt/node-32/bin/node", publish=False)
             upload_to_npm("/opt/node-64/bin/node", publish=False)
-            upload_to_npm("/opt/iojs-v45-32/bin/iojs", publish=False)
-            upload_to_npm("/opt/iojs-v45-64/bin/iojs", publish=False)

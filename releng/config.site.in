@@ -23,6 +23,14 @@ case "$PACKAGE_TARNAME" in
 esac
 
 case $frida_host_platform_arch in
+  linux-arm)
+    host_alias="arm-linux-gnueabi"
+    cross_compiling=yes
+  ;;
+  linux-armhf)
+    host_alias="arm-linux-gnueabihf"
+    cross_compiling=yes
+  ;;
   linux-i386)
     host_alias="i686-linux-gnu"
     cross_compiling=yes
@@ -33,6 +41,10 @@ case $frida_host_platform_arch in
   ;;
   qnx-i386)
     host_alias="i486-pc-nto-qnx6.6.0"
+    cross_compiling=yes
+  ;;
+  qnx-armeabi)
+    host_alias="arm-unknown-nto-qnx6.5.0eabi"
     cross_compiling=yes
   ;;
   qnx-arm)
@@ -73,8 +85,12 @@ case $frida_host_platform_arch in
     fi
     cross_compiling=yes
   ;;
-  mac-i386)
+  mac-i386|ios-i386)
     host_alias="i686-apple-darwin"
+    cross_compiling=yes
+  ;;
+  ios-x86_64)
+    host_alias="x86_64-apple-darwin"
     cross_compiling=yes
   ;;
   ios-arm)
@@ -86,6 +102,15 @@ case $frida_host_platform_arch in
   ios-arm64)
     host_alias="aarch64-apple-darwin"
     cross_compiling=yes
+  ;;
+esac
+
+case $frida_host_platform_arch in
+  linux-arm|linux-armhf|qnx-*)
+    enable_diet=yes
+  ;;
+  *)
+    enable_diet=no
   ;;
 esac
 

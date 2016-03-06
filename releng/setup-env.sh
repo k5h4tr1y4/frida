@@ -41,27 +41,23 @@ if [ $host_platform = "android" ]; then
   if [ -n "$ANDROID_NDK_ROOT" ]; then
     ndk_installed=$(cut -f1 -d" " "$ANDROID_NDK_ROOT/RELEASE.TXT")
     case ${ndk_installed} in
-    ${ndk_required})
-	    ;;
-    ${ndk_required}*)
-	    echo "ndk version kinda sorta matches: ${ndk_installed} ~= ${ndk_required}"
-	    ;;
-    *)
-      echo "Unsupported NDK version: ${ndk_installed}. Please install ${ndk_required}."               > /dev/stderr
-      echo ""                                                                                         > /dev/stderr
-      echo "Frida's SDK - the prebuilt dependencies snapshot - was compiled against ${ndk_required}," > /dev/stderr
-      echo "and as we have observed the NDK ABI breaking over time, we ask you to install"            > /dev/stderr
-      echo "the exact same version."                                                                  > /dev/stderr
-      echo ""                                                                                         > /dev/stderr
-      echo "However, if you'd like to take the risk and use a different NDK, you may edit"            > /dev/stderr
-      echo "releng/setup-env.sh and adjust the ndk_required variable. Make sure you use"              > /dev/stderr
-      echo "a newer NDK, and not an older one. Note that the proper solution is to rebuild"           > /dev/stderr
-      echo "the SDK against your NDK by running:"                                                     > /dev/stderr
-      echo "  make -f Makefile.sdk.mk FRIDA_HOST=android-arm"                                         > /dev/stderr
-      echo "If you do this and it works well for you, please let us know so we can upgrade"           > /dev/stderr
-      echo "the upstream SDK version."                                                                > /dev/stderr
-      exit 1
-      ;;
+      ${ndk_required}*)
+        ;;
+      *)
+        echo "Unsupported NDK version: ${ndk_installed}. Please install ${ndk_required}."               > /dev/stderr
+        echo ""                                                                                         > /dev/stderr
+        echo "Frida's SDK - the prebuilt dependencies snapshot - was compiled against ${ndk_required}," > /dev/stderr
+        echo "and as we have observed the NDK ABI breaking over time, we ask you to install"            > /dev/stderr
+        echo "the exact same version."                                                                  > /dev/stderr
+        echo ""                                                                                         > /dev/stderr
+        echo "However, if you'd like to take the risk and use a different NDK, you may edit"            > /dev/stderr
+        echo "releng/setup-env.sh and adjust the ndk_required variable. Make sure you use"              > /dev/stderr
+        echo "a newer NDK, and not an older one. Note that the proper solution is to rebuild"           > /dev/stderr
+        echo "the SDK against your NDK by running:"                                                     > /dev/stderr
+        echo "  make -f Makefile.sdk.mk FRIDA_HOST=android-arm"                                         > /dev/stderr
+        echo "If you do this and it works well for you, please let us know so we can upgrade"           > /dev/stderr
+        echo "the upstream SDK version."                                                                > /dev/stderr
+        exit 1
     esac
   else
     echo "ANDROID_NDK_ROOT must be set to the location of your $frida_ndk NDK." > /dev/stderr
@@ -79,14 +75,7 @@ fi
 prompt_color=33
 
 toolchain_version=20150406
-case $host_platform in
-  qnx)
-    sdk_version=20150607
-    ;;
-  *)
-    sdk_version=20150821
-    ;;
-esac
+sdk_version=20151226
 
 if [ -n "$FRIDA_ENV_NAME" ]; then
   frida_env_name_prefix=${FRIDA_ENV_NAME}-
@@ -110,19 +99,35 @@ LDFLAGS=""
 
 case $host_platform in
   linux)
-    CPP="/usr/bin/cpp"
-    CC="/usr/bin/gcc -static-libgcc -static-libstdc++"
-    CXX="/usr/bin/g++ -static-libgcc -static-libstdc++"
-    LD="/usr/bin/ld"
+    case $host_arch in
+      i386)
+        host_arch_flags="-m32"
+        host_toolprefix="/usr/bin/"
+        ;;
+      x86_64)
+        host_arch_flags="-m64"
+        host_toolprefix="/usr/bin/"
+        ;;
+      arm)
+        host_arch_flags="-march=armv5t"
+        host_toolprefix="arm-linux-gnueabi-"
+        ;;
+      armhf)
+        host_arch_flags="-march=armv6"
+        host_toolprefix="arm-linux-gnueabihf-"
+        ;;
+    esac
+    CPP="${host_toolprefix}cpp"
+    CC="${host_toolprefix}gcc -static-libgcc -static-libstdc++"
+    CXX="$FRIDA_ROOT/releng/linux-g++-wrapper.sh ${host_toolprefix}g++ -static-libgcc -static-libstdc++"
+    LD="${host_toolprefix}ld"
 
-    AR="/usr/bin/ar"
-    NM="/usr/bin/nm"
-    RANLIB="/usr/bin/ranlib"
-    STRIP="/usr/bin/strip"
+    AR="${host_toolprefix}ar"
+    NM="${host_toolprefix}nm"
+    RANLIB="${host_toolprefix}ranlib"
+    STRIP="${host_toolprefix}strip"
 
-    OBJDUMP="/usr/bin/objdump"
-
-    [ $host_arch == 'i386' ] && host_arch_flags="-m32" || host_arch_flags="-m64"
+    OBJDUMP="${host_toolprefix}objdump"
 
     CFLAGS="$host_arch_flags -ffunction-sections -fdata-sections"
     CXXFLAGS="-std=c++11"
@@ -135,9 +140,8 @@ case $host_platform in
     ;;
   mac)
     mac_minver="10.7"
-    mac_sdkver="10.10"
 
-    mac_sdk="macosx$mac_sdkver"
+    mac_sdk="macosx"
     mac_sdk_path="$(xcrun --sdk $mac_sdk --show-sdk-path)"
 
     CPP="$(xcrun --sdk $mac_sdk -f clang) -E"
@@ -151,6 +155,7 @@ case $host_platform in
     RANLIB="$(xcrun --sdk $mac_sdk -f ranlib)"
     STRIP="$(xcrun --sdk $mac_sdk -f strip)"
 
+    INSTALL_NAME_TOOL="$(xcrun --sdk $mac_sdk -f install_name_tool)"
     OTOOL="$(xcrun --sdk $mac_sdk -f otool)"
     CODESIGN="$(xcrun --sdk $mac_sdk -f codesign)"
     LIPO="$(xcrun --sdk $mac_sdk -f lipo)"
@@ -162,9 +167,15 @@ case $host_platform in
     ;;
   ios)
     ios_minver="7.0"
-    ios_sdkver="8.4"
 
-    ios_sdk="iphoneos$ios_sdkver"
+    case $host_arch in
+      i386|x86_64)
+        ios_sdk="iphonesimulator"
+        ;;
+      *)
+        ios_sdk="iphoneos"
+        ;;
+    esac
     ios_sdk_path="$(xcrun --sdk $ios_sdk --show-sdk-path)"
 
     CPP="$(xcrun --sdk $ios_sdk -f clang) -E"
@@ -178,16 +189,24 @@ case $host_platform in
     RANLIB="$(xcrun --sdk $ios_sdk -f ranlib)"
     STRIP="$(xcrun --sdk $ios_sdk -f strip)"
 
+    INSTALL_NAME_TOOL="$(xcrun --sdk $ios_sdk -f install_name_tool)"
     OTOOL="$(xcrun --sdk $ios_sdk -f otool)"
     CODESIGN="$(xcrun --sdk $ios_sdk -f codesign)"
     LIPO="$(xcrun --sdk $ios_sdk -f lipo)"
 
-    [ $host_arch == 'arm' ] && ios_arch=armv7 || ios_arch=arm64
+    case $host_arch in
+      arm)
+        ios_arch=armv7
+        ;;
+      *)
+        ios_arch=$host_arch
+        ;;
+    esac
 
-    CPPFLAGS="-isysroot $ios_sdk_path -miphoneos-version-min=$ios_minver -arch $ios_arch"
-    CFLAGS="-isysroot $ios_sdk_path -miphoneos-version-min=$ios_minver -arch $ios_arch"
+    CPPFLAGS="-isysroot $ios_sdk_path -miphoneos-version-min=$ios_minver -arch $ios_arch -fembed-bitcode-marker"
+    CFLAGS="-isysroot $ios_sdk_path -miphoneos-version-min=$ios_minver -arch $ios_arch -fembed-bitcode-marker"
     CXXFLAGS="-std=c++11 -stdlib=libc++"
-    LDFLAGS="-isysroot $ios_sdk_path -Wl,-iphoneos_version_min,$ios_minver -arch $ios_arch -Wl,-dead_strip -Wl,-no_compact_unwind"
+    LDFLAGS="-isysroot $ios_sdk_path -Wl,-iphoneos_version_min,$ios_minver -arch $ios_arch -fembed-bitcode-marker -Wl,-dead_strip"
     ;;
   android)
     android_build_platform=$(echo ${build_platform} | sed 's,^mac$,darwin,')
@@ -197,7 +216,7 @@ case $host_platform in
         android_target_platform=14
         android_host_abi=x86
         android_host_target=i686-none-linux-android
-        android_host_toolchain=x86-4.8
+        android_host_toolchain=x86-4.9
         android_host_toolprefix=i686-linux-android-
         android_host_cflags="-march=i686"
         android_host_ldflags="-fuse-ld=gold"
@@ -208,14 +227,14 @@ case $host_platform in
         android_host_target=x86_64-none-linux-android
         android_host_toolchain=x86_64-4.9
         android_host_toolprefix=x86_64-linux-android-
-        android_host_cflags="-march=x86_64"
+        android_host_cflags=""
         android_host_ldflags="-fuse-ld=gold"
         ;;
       arm)
         android_target_platform=14
         android_host_abi=armeabi-v7a
         android_host_target=armv7-none-linux-androideabi
-        android_host_toolchain=arm-linux-androideabi-4.8
+        android_host_toolchain=arm-linux-androideabi-4.9
         android_host_toolprefix=arm-linux-androideabi-
         android_host_cflags="-march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16"
         android_host_ldflags="-fuse-ld=gold -Wl,--fix-cortex-a8"
@@ -283,9 +302,15 @@ case $host_platform in
         qnx_host=i486-pc-nto-qnx6.6.0
         qnx_sysroot=$QNX_TARGET/x86
         ;;
+      armeabi)
+        qnx_host=arm-unknown-nto-qnx6.5.0eabi
+        qnx_sysroot=$QNX_TARGET/armle-v7
+        qnx_march=armv7-a
+        ;;
       arm)
         qnx_host=arm-unknown-nto-qnx6.5.0
         qnx_sysroot=$QNX_TARGET/armle
+        qnx_march=armv6
         ;;
       *)
         echo "Unsupported QNX architecture" > /dev/stderr
@@ -299,10 +324,10 @@ case $host_platform in
 
     PATH="$qnx_toolchain_dir:$PATH"
 
-    CPP="$qnx_toolchain_prefix-cpp -march=armv6 -mno-unaligned-access --sysroot=$qnx_sysroot $qnx_preprocessor_flags"
-    CC="$qnx_toolchain_prefix-gcc -march=armv6 -mno-unaligned-access --sysroot=$qnx_sysroot $qnx_preprocessor_flags -static-libgcc"
-    CXX="$FRIDA_ROOT/releng/qnx-g++-wrapper.sh $qnx_toolchain_prefix-g++ -march=armv6 -mno-unaligned-access --sysroot=$qnx_sysroot $qnx_preprocessor_flags -static-libgcc -static-libstdc++ -std=c++11"
-    LD="$qnx_toolchain_prefix-ld -march=armv6 -mno-unaligned-access --sysroot=$qnx_sysroot"
+    CPP="$qnx_toolchain_prefix-cpp -march=$qnx_march -mno-unaligned-access --sysroot=$qnx_sysroot $qnx_preprocessor_flags"
+    CC="$FRIDA_ROOT/releng/qnx-g++-wrapper.sh $qnx_toolchain_prefix-gcc -march=$qnx_march -mno-unaligned-access --sysroot=$qnx_sysroot $qnx_preprocessor_flags -static-libgcc"
+    CXX="$FRIDA_ROOT/releng/qnx-g++-wrapper.sh $qnx_toolchain_prefix-g++ -march=$qnx_march -mno-unaligned-access --sysroot=$qnx_sysroot $qnx_preprocessor_flags -static-libgcc -static-libstdc++ -std=c++11"
+    LD="$qnx_toolchain_prefix-ld --sysroot=$qnx_sysroot"
 
     AR="$qnx_toolchain_prefix-ar"
     NM="$qnx_toolchain_prefix-nm"
@@ -460,6 +485,7 @@ case $host_platform in
     ;;
   mac|ios)
     (
+      echo "export INSTALL_NAME_TOOL=\"$INSTALL_NAME_TOOL\""
       echo "export OTOOL=\"$OTOOL\""
       echo "export CODESIGN=\"$CODESIGN\""
       echo "export LIPO=\"$LIPO\""
